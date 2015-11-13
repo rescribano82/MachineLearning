@@ -1,0 +1,93 @@
+# Statistical Inference. Course Project
+by Ruben Escribano
+
+## Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+The datasets used in this report are as follows:
+
+* [Training set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) 
+* [Testing set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+## Loading data
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainSet <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+
+dim(trainSet)
+summary(trainSet$classe)
+```
+There are 19622 records with 160 variables. The variable we will be predicting on is classe, and the data is split up between the five classes.
+
+## Cleaning data
+Some variables include many instances with NA values. These variables are removed as follows:
+``` {r}
+cleanNAs <- apply(!is.na(trainSet), 2, prod)
+trainSet <- trainSet[, as.logical(cleanNAs)]
+```
+
+Removing unuseful variables, such as "X", "user_name", etc, as follows:
+``` {r}
+colnames(trainSet)
+trainSet <- trainSet[, -(1:7)]
+```
+
+Looking for high correlations (more than 95%): 
+``` {r}
+CORS <- cor(trainSet[, -ncol(trainSet)])
+
+CORS[upper.tri(CORS)] <- 0
+diag(CORS) <- 0
+
+aux <- !apply(CORS, 2, function(x) any(abs(x) > 0.9))
+trainSet <- trainSet[, c(aux, TRUE)]
+dim(trainSet)
+```
+
+Finally, 46 independent variables have been got.
+
+## Training and testing models
+Since the testing data doesn't consist of the actual classe varaible, it is not possible to predict the performance of the classification model. Therefore, the training data is splitted up- 70% became the training data, and 30% became the testing data.
+```{r}
+set.seed(123)
+aux <- sample(1:nrow(trainSet), nrow(trainSet)*0.7, replace=F)
+
+myTraining <- trainSet[+aux, ]
+myTesting  <- trainSet[-aux, ]
+```
+
+Three classification methods ("rpart", "rf", "JRip") are trained by cross validation as follows:
+```{r}
+library(caret)
+trainSet_cv <- trainControl(method="cv", number=10)
+M <- c('rpart', 'rf', 'JRip')
+
+models <- list()
+for (i in 1:length(M)) {
+   models[[i]] <- train(classe~., data=myTraining, trControl=trainSet_cv, method=M[i])
+}
+names(models) <- M
+```
+
+The accuracy of the prediction is determined as follows:
+```{r}
+confus <- list()
+for (i in 1:length(M)) {
+   confus[[i]] <- confusionMatrix(myTesting$classe, predict(models[[i]], newdata=myTesting))
+}
+names(confus) <- M
+```
+
+Object "confus" contains the confusion matrix of the threee methods. Using this object is possible to determine with one performs better: 
+```{r, Model performance with test data, fig.align='center', fig.width=6}
+ACCU <- sapply(confus, function(x) x$overall[1] )
+barplot(sort(ACCU, T), main='Accuracy of the algorithms (test)', ylim=c(0, 1))
+```
+
+## Conclusions
+Three models to predict exercise form based on movement data have been built. Based on the accuracies, the best prediction model is a "random forest". This model classifies correctly `r 100*round(max(ACCU), 3)` percent of the instances and has and error of `r 100*round(1-max(ACCU), 3)`%. This is a promising result regarding the use of machine learning to detect bad exercise form.
+
+
